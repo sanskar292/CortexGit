@@ -1,0 +1,19 @@
+{
+  "type": "object",
+  "required": ["updates"],
+  "additionalProperties": false,
+  "properties": {
+    "updates": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["key", "value"],
+        "additionalProperties": false,
+        "properties": {
+          "key": { "type": "string", "pattern": "^[a-z0-9_.]+$" },
+          "value": {}
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,8 @@
+# requirements-dev.txt
+-e .[dev]
+
+# Add these for local development
+pytest-watch>=4.2.0
+ipython>=8.0.0
+black>=23.0.0
+ruff>=0.1.0
