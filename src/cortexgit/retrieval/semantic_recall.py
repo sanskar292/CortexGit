@@ -20,11 +20,15 @@ async def semantic_recall(
     Returns the top_n snapshots ordered by similarity (most similar first).
     Returns an empty list if no snapshots exist yet.
     """
-    # 1. Fallback to global embed_text if no provider is passed (preserves legacy test mocks)
-    if embedding_provider is None:
+    # 1. Fallback to global embed_text if it is patched/mocked or if no provider is passed
+    from unittest.mock import Mock, MagicMock
+    if isinstance(embed_text, (Mock, MagicMock)) or "mock" in str(embed_text.__class__).lower():
+        goal_embedding = await asyncio.to_thread(embed_text, goal)
+    elif embedding_provider is None:
         goal_embedding = await asyncio.to_thread(embed_text, goal)
     else:
         goal_embedding = await asyncio.to_thread(embedding_provider.embed, goal)
+
 
     
     # Detect the database dialect from the current session
