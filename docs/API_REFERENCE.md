@@ -24,7 +24,7 @@ from cortexgit import CortexGit
 
 #### Signature
 ```python
-def __init__(self, database_url: str = None)
+def __init__(self, database_url: str = None, llm_provider: LLMProvider = None, embedding_provider: EmbeddingProvider = None)
 ```
 
 #### Description
@@ -32,17 +32,27 @@ Initializes the CortexGit client.
 
 #### Parameters
 * **`database_url`** *(str, optional)*: Connection URL for the database (e.g., `sqlite+aiosqlite:///cortexgit.db` or `postgresql+asyncpg://...`). If not provided, it defaults to the `DATABASE_URL` environment variable.
+* **`llm_provider`** *(LLMProvider, optional)*: A custom LLM provider instance (e.g., `OpenAIProvider`, `AnthropicProvider`). If not provided, one is created from `CORTEXGIT_LLM_PROVIDER` env (defaults to `openai`).
+* **`embedding_provider`** *(EmbeddingProvider, optional)*: A custom embedding provider instance (e.g., `OpenAIProvider`, `OllamaProvider`). If not provided, one is created from `CORTEXGIT_EMBEDDING_PROVIDER` env (defaults to `openai`).
 
 #### Return Value
 * **`None`**
 
 #### Code Example
 ```python
-# Initialize using the DATABASE_URL environment variable
+# Initialize using environment variables
 memory = CortexGit()
 
-# Initialize using an explicit database connection string
+# Initialize with explicit database URL
 memory = CortexGit(database_url="sqlite+aiosqlite:///custom_memory.db")
+
+# Initialize with custom providers
+from cortexgit.llm_providers import OpenAIProvider, OllamaProvider
+memory = CortexGit(
+    database_url="sqlite+aiosqlite:///cortexgit.db",
+    llm_provider=OpenAIProvider(api_key="...", model="gpt-4o"),
+    embedding_provider=OllamaProvider(embedding_model="nomic-embed-text")
+)
 ```
 
 #### Common Errors

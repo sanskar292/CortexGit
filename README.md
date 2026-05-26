@@ -19,6 +19,7 @@ pip install cortexgit
 ## Quick Start
 
 ```python
+import asyncio
 from cortexgit import CortexGit
 from anthropic import Anthropic
 
@@ -26,30 +27,37 @@ from anthropic import Anthropic
 memory = CortexGit()
 client = Anthropic()
 
-def my_agent(user_query):
+async def my_agent(user_query):
+    session_id = "session-1"
+    agent_id = "my-agent"
+    
     # Retrieve relevant context from memory
-    context = memory.get_context(
+    context = await memory.get_context(
         goal=user_query,
-        budget_tokens=4000
+        budget_tokens=4000,
+        session_id=session_id
     )
     
     # Call Claude with context
-    response = client.messages.create(
+    response = await client.messages.create(
         model="claude-sonnet-4-20250514",
+        max_tokens=1024,
         system=f"You are a helpful agent. Memory: {context}",
         messages=[{"role": "user", "content": user_query}]
     )
     
     # Remember what happened
-    memory.log_event("interaction", {
-        "query": user_query,
-        "response": response.content[0].text
-    })
+    await memory.log_event(
+        session_id=session_id,
+        agent_id=agent_id,
+        event_type="agent",
+        payload={"query": user_query, "response": response.content[0].text}
+    )
     
     return response.content[0].text
 
 # Use it
-print(my_agent("What is 2+2?"))
+print(asyncio.run(my_agent("What is 2+2?")))
 ```
 
 ## Documentation
@@ -58,6 +66,8 @@ print(my_agent("What is 2+2?"))
 - [Architecture](docs/ARCHITECTURE.md)
 - [Getting Started](docs/GETTING_STARTED.md)
 - [Multi-Provider LLM Setup](docs/PROVIDERS.md)
+- [Contributing](CONTRIBUTING.md)
+- [Changelog](CHANGELOG.md)
 
 
 ## Configuration

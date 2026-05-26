@@ -3,7 +3,6 @@ import os
 import json
 from enum import Enum as PyEnum
 from datetime import datetime, timezone
-from dotenv import load_dotenv
 
 from sqlalchemy import (
     Column,
@@ -18,8 +17,6 @@ from sqlalchemy import (
 )
 from sqlalchemy.types import TypeDecorator
 from sqlalchemy.orm import declarative_base, relationship
-
-load_dotenv()
 
 def check_vector_support():
     db_url = os.getenv("DATABASE_URL")

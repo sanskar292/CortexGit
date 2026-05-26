@@ -6,8 +6,8 @@ CortexGit supports multiple LLM and Embedding API providers out-of-the-box. This
 
 ## Supported Providers
 
-1. **OpenAI** (Default)
-2. **Anthropic**
+1. **OpenAI** (Default for LLM and embeddings)
+2. **Anthropic** (Default for LLM when only `ANTHROPIC_API_KEY` is set)
 3. **OpenRouter** (For unified cloud access to 100+ models)
 4. **Ollama** (For fully local execution with zero API keys)
 
@@ -17,7 +17,7 @@ CortexGit supports multiple LLM and Embedding API providers out-of-the-box. This
 
 Configure active providers and options in your `.env` file. See the examples below.
 
-### 1. OpenAI (Default)
+### 1. OpenAI (Default LLM & Embedding)
 - **Use Case:** High quality general reasoning and fast embeddings.
 - **Configuration:**
   ```env

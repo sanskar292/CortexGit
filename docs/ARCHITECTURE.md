@@ -47,26 +47,26 @@ GET /context
 ## Stores (Internal)
 
 ### Event Log
-- PostgreSQL table
+- PostgreSQL or SQLite table (portable via SQLAlchemy)
 - Append-only — no UPDATE, no DELETE ever
-- Schema: event_id (uuid), session_id, agent_id, event_type (enum), payload (jsonb), created_at (timestamptz)
+- Schema: event_id (uuid), session_id, agent_id, event_type (enum), payload (jsonb / JSON text), created_at (timestamptz)
 - This is the source of truth. Every other store is derived from it.
 
 ### Entity Registry
-- PostgreSQL table
-- Schema: key (text PK), value (jsonb), agent_id, event_id (FK to event log), updated_at
+- PostgreSQL or SQLite table
+- Schema: key (text PK), value (jsonb / JSON text), agent_id, event_id (FK to event log), updated_at
 - Keys are namespaced: agent_alpha.current_task for agent-local, project.goal for shared
 - Conflict = key exists AND value differs from proposed value
 
 ### Snapshot Store
-- PostgreSQL table + pgvector extension
-- Schema: snapshot_id (uuid), event_range (int4range), summary (text), entities_mentioned (text[]), embedding (vector(1536)), created_at
+- PostgreSQL or SQLite table + pgvector extension (PostgreSQL) or in-memory cosine similarity (SQLite)
+- Schema: snapshot_id (uuid), event_range (int4range / string), summary (text), entities_mentioned (text[] / JSON), embedding (vector(1536) / float[] / JSON), created_at
 - Written by Summarizer LLM only
 - Immutable after creation — no UPDATE ever
 - Every write goes through write-back gate
 
 ### Conflict Log
-- PostgreSQL table
+- PostgreSQL or SQLite table
 - Schema: conflict_id (uuid), key, existing_value, proposed_value, existing_event_id, proposed_event_id, resolved (bool), created_at
 - Written by conflict detector only
 - Never written by LLM
@@ -236,15 +236,16 @@ If nothing should be extracted, return: { "updates": [] }
 ## Tech Stack
 
 | Layer | Technology |
-|---|---|
-| API framework | FastAPI |
-| Database | PostgreSQL 15+ |
-| Vector search | pgvector |
+|---|---|---|
+| Runtime | Python 3.10+ (async SDK) |
+| Database (production) | PostgreSQL 15+ with pgvector |
+| Database (development) | SQLite via aiosqlite |
+| Vector search (native) | pgvector (PostgreSQL) |
+| Vector search (fallback) | In-memory cosine similarity (SQLite) |
 | Migrations | Alembic |
 | Validation | jsonschema |
-| LLM calls | Anthropic Python SDK |
-| Embeddings | OpenAI text-embedding-3-small |
-| Background tasks | FastAPI BackgroundTasks (Phase 3) |
+| LLM calls | Anthropic Python SDK / OpenAI SDK / OpenRouter / Ollama |
+| Embeddings | OpenAI text-embedding-3-small / Ollama / OpenRouter |
 | Testing | pytest + pytest-asyncio |
 
 ---
@@ -252,45 +253,53 @@ If nothing should be extracted, return: { "updates": [] }
 ## Project Structure
 
 ```
-cortexgit/
-  api/
-    routes/
-      events.py        # POST /events
-      entities.py      # POST /entities
-      context.py       # GET /context
-    main.py
-  core/
-    event_logger.py
-    entity_registry.py
-    conflict_detector.py
-    write_back_gate.py
-    context_assembler.py
-    recency_filter.py
-    entity_pull.py
-  llm/
-    summarizer.py
-    entity_extractor.py
-    snapshot_trigger.py
-  retrieval/
-    semantic_recall.py
-    embeddings.py
-  db/
-    models.py
-    migrations/
-  schemas/
-    snapshot_schema.json
-    entity_extraction_schema.json
-  tests/
-    test_event_logger.py
-    test_entity_registry.py
-    test_conflict_detector.py
-    test_write_back_gate.py
-    test_context_assembler.py
-    test_retrieval.py
-  ARCHITECTURE.md       # this file
-  PROGRESS.md           # updated every session
-  requirements.txt
-  .env.example
+src/
+  cortexgit/
+    __init__.py           # Public exports: CortexGit, EventLog, EntityRegistry
+    core/
+      memory.py           # Main CortexGit client class
+      event_log.py        # Event logging (append-only)
+      entity_registry.py  # Entity registry handler
+      conflict_detector.py
+      write_back_gate.py  # JSON schema validation for LLM outputs
+      context_assembler.py
+      recency_filter.py
+      entity_pull.py
+    llm_providers/
+      base.py             # Abstract LLMProvider and EmbeddingProvider
+      anthropic_provider.py
+      openai_provider.py
+      openrouter_provider.py
+      ollama_provider.py
+      provider_factory.py
+    llm/
+      summarizer.py
+      entity_extractor.py
+      snapshot_trigger.py
+    retrieval/
+      semantic_recall.py
+      embeddings.py
+    db/
+      models.py
+      database.py
+      migrations/
+    schemas/
+      snapshot_schema.json
+      entity_extraction_schema.json
+tests/
+  conftest.py
+  test_event_logger.py
+  test_entity_registry.py
+  test_conflict_detector.py
+  test_write_back_gate.py
+  test_context_assembler.py
+  test_retrieval.py
+  ...
+docs/
+  ARCHITECTURE.md
+  GETTING_STARTED.md
+  API_REFERENCE.md
+  PROVIDERS.md
 ```
 
 ---

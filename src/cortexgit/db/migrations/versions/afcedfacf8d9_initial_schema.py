@@ -50,7 +50,7 @@ def upgrade() -> None:
     sa.Column('event_id', event_id_type, nullable=False),
     sa.Column('session_id', sa.Text(), nullable=False),
     sa.Column('agent_id', sa.Text(), nullable=False),
-    sa.Column('event_type', sa.Enum('SYSTEM', 'USER', 'AGENT', 'ACTION', 'OBSERVATION', 'THOUGHT', 'ERROR', name='eventtype'), nullable=False),
+    sa.Column('event_type', sa.Enum('system', 'user', 'agent', 'action', 'observation', 'thought', 'error', name='eventtype'), nullable=False),
     sa.Column('payload', payload_type, nullable=False),
     sa.Column('created_at', sa.DateTime(timezone=True), nullable=False),
     sa.PrimaryKeyConstraint('event_id')

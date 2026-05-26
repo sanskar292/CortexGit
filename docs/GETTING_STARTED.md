@@ -112,7 +112,7 @@ memory = CortexGit(database_url="postgresql+asyncpg://postgres:password@localhos
 ```
 
 ### Database Engines Supported:
-- **SQLite**: Great for local, in-process, serverless development (`sqlite:///cortexgit.db`).
+- **SQLite**: Great for local, in-process, serverless development (`sqlite+aiosqlite:///cortexgit.db`).
 - **PostgreSQL**: Standard for production, highly optimized for vector operations using `pgvector` (`postgresql+asyncpg://user:pass@host:5432/dbname`).
 
 ---

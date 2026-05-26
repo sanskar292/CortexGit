@@ -1,6 +1,6 @@
 # MANIFEST.in
 include README.md
 include LICENSE
-include ARCHITECTURE.md
+include docs/ARCHITECTURE.md
 recursive-include src/cortexgit/schemas *.json
 recursive-include tests *.py

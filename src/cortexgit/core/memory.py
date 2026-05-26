@@ -1,5 +1,6 @@
 # Core SDK memory module (Phase 3)
 import os
+import logging
 import uuid
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
 from sqlalchemy.orm import sessionmaker
@@ -8,7 +9,7 @@ from sqlalchemy import select
 from cortexgit.db.database import AsyncSessionLocal, engine
 from cortexgit.core.event_log import EventLogger, EventLog
 from cortexgit.core.conflict_detector import ConflictDetector
-from cortexgit.core.entity_registry import EntityRegistryHandler, EntityRegistry
+from cortexgit.core.entity_registry import EntityRegistryHandler
 from cortexgit.core.context_assembler import assemble
 from cortexgit.llm.entity_extractor import extract_entities
 from cortexgit.llm.snapshot_trigger import should_snapshot
@@ -35,6 +36,11 @@ class CortexGit:
         Initialize the CortexGit SDK persistent memory client.
         If database_url is provided, it configures a new engine.
         Otherwise, it uses the default engine configured from the environment.
+
+        Args:
+            database_url: Optional database connection URL. Defaults to DATABASE_URL env var.
+            llm_provider: Optional custom LLM provider instance. Defaults to env-configured provider.
+            embedding_provider: Optional custom embedding provider instance. Defaults to env-configured provider.
         """
         if database_url:
             from sqlalchemy.pool import NullPool
@@ -116,8 +122,11 @@ class CortexGit:
                             event_id=event.event_id
                         )
             except Exception:
-                # Gracefully swallow background pipeline errors to match FastAPI background task behavior
-                pass
+                logging.getLogger(__name__).exception(
+                    "[cortexgit] entity_extraction pipeline failed for event_id=%s session_id=%s",
+                    str(event.event_id),
+                    session_id,
+                )
 
         # 2. Run Snapshot Trigger
         async with self.session_factory() as session:
@@ -141,12 +150,18 @@ class CortexGit:
                     summary_output = await summarize(events_list, self.llm_provider)
                     await write_snapshot(session_id, summary_output, session, self.embedding_provider)
             except Exception:
-                pass
+                logging.getLogger(__name__).exception(
+                    "[cortexgit] snapshot pipeline failed for session_id=%s",
+                    session_id,
+                )
 
     async def get_context(self, goal: str, budget_tokens: int, session_id: str) -> dict:
         """
         Retrieves context containing recent events, relevant snapshots, entities, and open conflicts
         packed cleanly under the budget token limit.
+
+        Raises:
+            ValueError: If goal or session_id are empty/whitespace, or if budget_tokens <= 0.
         """
         if not goal or not goal.strip():
             raise ValueError("goal must be a non-empty string")

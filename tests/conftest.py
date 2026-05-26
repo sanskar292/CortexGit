@@ -3,6 +3,7 @@ import sys
 import pytest
 from unittest.mock import MagicMock
 
+# NOTE: Global monkey-patching of create_async_engine is fragile — prefer pytest fixtures + dependency injection.
 # Intercept and patch create_async_engine and create_engine at the very beginning of the test session!
 import sqlalchemy
 import sqlalchemy.ext.asyncio

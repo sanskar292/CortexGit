@@ -7,9 +7,9 @@ setup(
     description="Persistent memory for LLM agents. Event sourcing + semantic retrieval.",
     long_description=open("README.md").read(),
     long_description_content_type="text/markdown",
-    author="Antigravity",
-    author_email="antigravity@google.com",
-    url="https://github.com/google-deepmind/cortexgit",
+    author="CortexGit Contributors",
+    author_email="",
+    url="https://github.com/sanskar292/CortexGit",
     license="MIT",
     
     package_dir={"": "src"},
@@ -38,6 +38,7 @@ setup(
             "black>=23.0.0",
             "ruff>=0.1.0",
             "mypy>=1.0.0",
+            "alembic>=1.11.0",
         ],
         "docs": [
             "sphinx>=5.0.0",
@@ -57,8 +58,7 @@ setup(
     
     keywords="ai agents memory persistence event-sourcing semantic-search",
     project_urls={
-        "Bug Reports": "https://github.com/google-deepmind/cortexgit/issues",
-        "Source": "https://github.com/google-deepmind/cortexgit",
-        "Documentation": "https://cortexgit.readthedocs.io",
+        "Bug Reports": "https://github.com/sanskar292/CortexGit/issues",
+        "Source": "https://github.com/sanskar292/CortexGit",
     },
 )

@@ -5,7 +5,7 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [0.1.0] - 2024-05-25
+## [0.1.0] - 2026-05-24
 
 ### Added
 - Append-only event log for source of truth
@@ -17,5 +17,5 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Known Limitations
 - No multi-agent coordination yet (coming in 0.2.0)
-- Vector search only works with pgvector, not all databases
+- Native pgvector acceleration requires PostgreSQL; falls back to in-memory cosine similarity on other databases
 - Requires Python 3.10+

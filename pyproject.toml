@@ -10,7 +10,7 @@ description = "Persistent memory for LLM agents"
 readme = "README.md"
 requires-python = ">=3.10"
 license = {text = "MIT"}
-authors = [{name = "Antigravity", email = "antigravity@google.com"}]
+authors = [{name = "CortexGit Contributors", email = ""}]
 
 dependencies = [
     "sqlalchemy>=2.0.0",
@@ -32,11 +32,12 @@ dev = [
     "black>=23.0.0",
     "ruff>=0.1.0",
     "mypy>=1.0.0",
+    "alembic>=1.11.0",
 ]
 
 [project.urls]
-Repository = "https://github.com/google-deepmind/cortexgit"
-Issues = "https://github.com/google-deepmind/cortexgit/issues"
+Repository = "https://github.com/sanskar292/CortexGit"
+Issues = "https://github.com/sanskar292/CortexGit/issues"
 
 [tool.black]
 line-length = 100

@@ -113,10 +113,13 @@ setup(
     install_requires=[
         "sqlalchemy>=2.0.0",
         "psycopg2-binary>=2.9.0",  # PostgreSQL adapter
+        "asyncpg>=0.28.0",         # Async PostgreSQL adapter
         "pgvector>=0.1.0",
         "anthropic>=0.25.0",
         "openai>=1.0.0",
         "jsonschema>=4.0.0",
+        "python-dotenv>=1.0.0",
+        "aiosqlite>=0.19.0",       # Async SQLite driver
     ],
     
     extras_require={
@@ -177,10 +180,13 @@ authors = [{name = "Your Name", email = "you@example.com"}]
 dependencies = [
     "sqlalchemy>=2.0.0",
     "psycopg2-binary>=2.9.0",
+    "asyncpg>=0.28.0",
     "pgvector>=0.1.0",
     "anthropic>=0.25.0",
     "openai>=1.0.0",
     "jsonschema>=4.0.0",
+    "python-dotenv>=1.0.0",
+    "aiosqlite>=0.19.0",
 ]
 
 [project.optional-dependencies]

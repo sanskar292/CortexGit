@@ -11,7 +11,7 @@ class EventLogger:
 
     async def log_event(self, session_id: str, agent_id: str, event_type: str, payload: dict) -> EventLog:
         """
-        Append event to PostgreSQL event log.
+        Append event to the event log.
         - Validates event_type against the EventType enum.
         - Automatically creates UUID and timestamp.
         """
@@ -36,7 +36,7 @@ class EventLogger:
             created_at=datetime.now(timezone.utc)
         )
 
-        # 3. Write to PostgreSQL database
+        # 3. Write to database
         self.session.add(event)
         await self.session.commit()
         await self.session.refresh(event)
