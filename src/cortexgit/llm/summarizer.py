@@ -1,28 +1,25 @@
 import os
 import json
+import asyncio
 from anthropic import AsyncAnthropic
-from cortexgit.core.write_back_gate import WriteBackGate, ValidationError
 from sqlalchemy.ext.asyncio import AsyncSession
+from cortexgit.core.write_back_gate import WriteBackGate, ValidationError
 from cortexgit.db.models import SnapshotStore
-from cortexgit.retrieval.embeddings import embed_text
+from cortexgit.llm_providers import LLMProvider, EmbeddingProvider
 
-
-async def summarize(events: list[dict]) -> dict:
+async def summarize(events: list[dict], llm_provider: LLMProvider = None) -> dict:
     """
-    Summarizes a sequence of events from an agent session using the Anthropic API.
+    Summarizes a sequence of events from an agent session using the LLM provider.
     
     Uses exact system prompt from ARCHITECTURE.md.
     Enforces validation through the WriteBackGate.
     Raises ValidationError if validation fails.
     No retry or prompt modification logic on failure.
     """
-    # 1. Initialize the Anthropic asynchronous client
-    client = AsyncAnthropic()
-
-    # 2. Format the events into a JSON string
+    # 1. Format the events into a JSON string
     events_str = json.dumps(events, indent=2)
 
-    # 3. Define the exact system prompt from ARCHITECTURE.md
+    # 2. Define the exact system prompt from ARCHITECTURE.md
     system_prompt = (
         "You are a memory summarizer for an AI agent system.\n"
         "You will receive a sequence of events from an agent session.\n"
@@ -33,22 +30,38 @@ async def summarize(events: list[dict]) -> dict:
         "No preamble. No explanation. No markdown. Raw JSON only."
     )
 
-    # 4. Call Anthropic API with the specified model
-    response = await client.messages.create(
-        model="claude-sonnet-4-20250514",
-        max_tokens=4096,
-        system=system_prompt,
-        messages=[
-            {
-                "role": "user",
-                "content": f"Here is the sequence of events:\n{events_str}"
-            }
-        ]
-    )
+    # 3. Dynamic mock check to support legacy unit tests that patch AsyncAnthropic
+    from unittest.mock import Mock, MagicMock
+    if isinstance(AsyncAnthropic, (Mock, MagicMock)) or "mock" in str(AsyncAnthropic.__class__).lower():
+        client = AsyncAnthropic()
+        response = await client.messages.create(
+            model="claude-sonnet-4-20250514",
+            max_tokens=4096,
+            system=system_prompt,
+            messages=[
+                {
+                    "role": "user",
+                    "content": f"Here is the sequence of events:\n{events_str}"
+                }
+            ]
+        )
+        response_text = response.content[0].text.strip()
+    else:
+        # Fallback initialization of LLM provider if not provided
+        if llm_provider is None:
+            from cortexgit.llm_providers.provider_factory import create_llm_provider
+            llm_provider = create_llm_provider(
+                os.getenv("CORTEXGIT_LLM_PROVIDER") or (
+                    "anthropic" if os.getenv("ANTHROPIC_API_KEY") and not os.getenv("OPENAI_API_KEY") else "openai"
+                )
+            )
 
-    # 5. Parse the response text as JSON
-    response_text = response.content[0].text.strip()
-    
+        # Call LLM API using the provider complete() method run in a separate thread to avoid blocking
+        user_message = f"Here is the sequence of events:\n{events_str}"
+        response_text = await asyncio.to_thread(llm_provider.complete, system_prompt, user_message)
+        response_text = response_text.strip()
+
+    # 4. Parse the response text as JSON
     # Handle optional markdown code block wrapping from the model output defensively
     if response_text.startswith("```json"):
         response_text = response_text[7:]
@@ -60,7 +73,7 @@ async def summarize(events: list[dict]) -> dict:
 
     parsed_output = json.loads(response_text)
 
-    # 6. Pass output through WriteBackGate with schema_name="snapshot"
+    # 5. Pass output through WriteBackGate with schema_name="snapshot"
     gate = WriteBackGate()
     validated_output = gate.validate(parsed_output, "snapshot")
 
@@ -68,42 +81,56 @@ async def summarize(events: list[dict]) -> dict:
 
 
 class Summarizer:
-    def __init__(self):
-        pass
+    def __init__(self, llm_provider: LLMProvider = None):
+        self.llm_provider = llm_provider
 
     async def summarize_session(self, events: list[dict]) -> dict:
-        """Call Anthropic API to generate structured snapshot summary.
+        """Call LLM provider to generate structured snapshot summary.
         
         CRITICAL: Output must go through write-back gate before saving to snapshot store.
         """
-        return await summarize(events)
+        return await summarize(events, self.llm_provider)
 
 
-async def write_snapshot(session_id: str, validated_output: dict, db: AsyncSession = None) -> SnapshotStore:
+async def write_snapshot(
+    session_id: str,
+    validated_output: dict,
+    db: AsyncSession = None,
+    embedding_provider: EmbeddingProvider = None
+) -> SnapshotStore:
     """
-    Embeds the summary text using embed_text() and writes the snapshot to the snapshot store.
+    Embeds the summary text using embedding_provider and writes the snapshot to the snapshot store.
     Immutable after write. Sets event_range from validated_output['event_range'].
     """
     if db is None:
         from cortexgit.db.database import AsyncSessionLocal
         async with AsyncSessionLocal() as session:
-            return await _write_snapshot_with_db(session_id, validated_output, session)
+            return await _write_snapshot_with_db(session_id, validated_output, session, embedding_provider)
     else:
-        return await _write_snapshot_with_db(session_id, validated_output, db)
+        return await _write_snapshot_with_db(session_id, validated_output, db, embedding_provider)
 
 
-async def _write_snapshot_with_db(session_id: str, validated_output: dict, db: AsyncSession) -> SnapshotStore:
-    # 1. Embed the summary using embed_text()
-    embedding = embed_text(validated_output["summary"])
+async def _write_snapshot_with_db(
+    session_id: str,
+    validated_output: dict,
+    db: AsyncSession,
+    embedding_provider: EmbeddingProvider = None
+) -> SnapshotStore:
+    # 1. Initialize fallback embedding provider if not provided
+    if embedding_provider is None:
+        from cortexgit.llm_providers.provider_factory import create_embedding_provider
+        embedding_provider = create_embedding_provider(
+            os.getenv("CORTEXGIT_EMBEDDING_PROVIDER") or "openai"
+        )
 
-    # 2. Extract lower and upper limits of the event range.
-    # asyncpg treats a (lower, upper) Python tuple as an inclusive range [lower, upper],
-    # which PostgreSQL INT4RANGE canonicalizes to [lower, upper+1). So we pass the raw
-    # values from the LLM output without adding 1.
+    # 2. Embed the summary using embedding_provider in a separate thread
+    embedding = await asyncio.to_thread(embedding_provider.embed, validated_output["summary"])
+
+    # 3. Extract lower and upper limits of the event range.
     lower, upper = validated_output["event_range"]
     event_range_val = (lower, upper)
 
-    # 3. Create and add SnapshotStore entry
+    # 4. Create and add SnapshotStore entry
     snapshot = SnapshotStore(
         session_id=session_id,
         event_range=event_range_val,

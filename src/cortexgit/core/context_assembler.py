@@ -7,6 +7,7 @@ from cortexgit.db.models import ConflictLog
 from cortexgit.core.recency_filter import RecencyFilter
 from cortexgit.retrieval.semantic_recall import semantic_recall
 from cortexgit.core.entity_pull import entity_pull
+from cortexgit.llm_providers import EmbeddingProvider
 
 
 def serialize_conflict(c: ConflictLog) -> dict:
@@ -47,7 +48,13 @@ def serialize_snapshot(s) -> dict:
         "created_at": s.created_at.isoformat() if s.created_at else None
     }
 
-async def assemble(goal: str, session_id: str, budget_tokens: int, session: AsyncSession) -> dict:
+async def assemble(
+    goal: str,
+    session_id: str,
+    budget_tokens: int,
+    session: AsyncSession,
+    embedding_provider: EmbeddingProvider = None
+) -> dict:
     """
     Assembles context containing recent events, relevant snapshots, entities, and open conflicts.
     Enforces strict token budget limit. Priority order:
@@ -72,7 +79,7 @@ async def assemble(goal: str, session_id: str, budget_tokens: int, session: Asyn
     events = await rf.get_recent_events(session_id)
 
     # Fetch relevant snapshots
-    snapshots = await semantic_recall(goal, session)
+    snapshots = await semantic_recall(goal, session, embedding_provider=embedding_provider)
 
     # Fetch relevant entities
     entities = await entity_pull(goal, session)
@@ -135,9 +142,10 @@ async def assemble(goal: str, session_id: str, budget_tokens: int, session: Asyn
     }
 
 class ContextAssembler:
-    def __init__(self, session: AsyncSession):
+    def __init__(self, session: AsyncSession, embedding_provider: EmbeddingProvider = None):
         self.session = session
+        self.embedding_provider = embedding_provider
 
     async def assemble_context(self, session_id: str, goal: str, budget_tokens: int) -> dict:
         """Assembles context containing recent events, relevant snapshots, entities, and conflicts."""
-        return await assemble(goal, session_id, budget_tokens, self.session)
+        return await assemble(goal, session_id, budget_tokens, self.session, self.embedding_provider)

@@ -1,19 +1,34 @@
 # Retrieval Semantic Recall module (Phase 2)
+import os
+import math
+import asyncio
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
-import math
 
 from cortexgit.db.models import SnapshotStore, HAS_PGVECTOR
 from cortexgit.retrieval.embeddings import embed_text
+from cortexgit.llm_providers import EmbeddingProvider
 
-async def semantic_recall(goal: str, session: AsyncSession, top_n: int = 5) -> list[SnapshotStore]:
+async def semantic_recall(
+    goal: str,
+    session: AsyncSession,
+    top_n: int = 5,
+    embedding_provider: EmbeddingProvider = None
+) -> list[SnapshotStore]:
     """
     Runs cosine similarity ANN search over snapshot embeddings based on a goal query.
     Returns the top_n snapshots ordered by similarity (most similar first).
     Returns an empty list if no snapshots exist yet.
     """
-    # 1. Embed the goal string (raises exception on fail)
-    goal_embedding = embed_text(goal)
+    # 1. Fallback initialization of embedding provider if not provided
+    if embedding_provider is None:
+        from cortexgit.llm_providers.provider_factory import create_embedding_provider
+        embedding_provider = create_embedding_provider(
+            os.getenv("CORTEXGIT_EMBEDDING_PROVIDER") or "openai"
+        )
+
+    # 2. Embed the goal string in a separate thread to avoid blocking the event loop
+    goal_embedding = await asyncio.to_thread(embedding_provider.embed, goal)
     
     # Detect the database dialect from the current session
     is_postgres = False
@@ -26,7 +41,7 @@ async def semantic_recall(goal: str, session: AsyncSession, top_n: int = 5) -> l
     except Exception:
         pass
 
-    # 2. Check if pgvector is supported by the database
+    # 3. Check if pgvector is supported by the database
     if is_postgres and HAS_PGVECTOR:
         stmt = (
             select(SnapshotStore)
@@ -47,8 +62,6 @@ async def semantic_recall(goal: str, session: AsyncSession, top_n: int = 5) -> l
         def cosine_similarity(v1, v2):
             if not v1 or not v2:
                 return 0.0
-            # Defensive check: if database stored it as JSON text, it is loaded automatically as list/tuple
-            # by our PortableEmbedding TypeDecorator, but we handle strings here just in case.
             if isinstance(v1, str):
                 import json
                 try:
@@ -74,9 +87,10 @@ async def semantic_recall(goal: str, session: AsyncSession, top_n: int = 5) -> l
         return snapshots[:top_n]
 
 class SemanticRecall:
-    def __init__(self, session: AsyncSession):
+    def __init__(self, session: AsyncSession, embedding_provider: EmbeddingProvider = None):
         self.session = session
+        self.embedding_provider = embedding_provider
 
     async def recall_relevant_snapshots(self, goal: str, limit: int = 5) -> list[SnapshotStore]:
         """Fetch top-N snapshots by relevance to goal string using cosine similarity on pgvector."""
-        return await semantic_recall(goal, self.session, limit)
+        return await semantic_recall(goal, self.session, limit, self.embedding_provider)

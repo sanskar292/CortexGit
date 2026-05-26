@@ -57,6 +57,8 @@ print(my_agent("What is 2+2?"))
 - [API Reference](docs/API_REFERENCE.md)
 - [Architecture](docs/ARCHITECTURE.md)
 - [Getting Started](docs/GETTING_STARTED.md)
+- [Multi-Provider LLM Setup](docs/PROVIDERS.md)
+
 
 ## Configuration
 

@@ -13,13 +13,24 @@ from cortexgit.core.context_assembler import assemble
 from cortexgit.llm.entity_extractor import extract_entities
 from cortexgit.llm.snapshot_trigger import should_snapshot
 from cortexgit.llm.summarizer import summarize, write_snapshot
+from cortexgit.llm_providers import (
+    LLMProvider,
+    EmbeddingProvider,
+    create_llm_provider,
+    create_embedding_provider,
+)
 
 class ConflictError(Exception):
     """Exception raised when an entity write conflict is detected."""
     pass
 
 class CortexGit:
-    def __init__(self, database_url: str = None):
+    def __init__(
+        self,
+        database_url: str = None,
+        llm_provider: LLMProvider = None,
+        embedding_provider: EmbeddingProvider = None
+    ):
         """
         Initialize the CortexGit SDK persistent memory client.
         If database_url is provided, it configures a new engine.
@@ -36,6 +47,17 @@ class CortexGit:
         else:
             self.engine = engine
             self.session_factory = AsyncSessionLocal
+
+        # Set up LLM and Embedding Providers
+        self.llm_provider = llm_provider or create_llm_provider(
+            os.getenv("CORTEXGIT_LLM_PROVIDER") or (
+                "anthropic" if os.getenv("ANTHROPIC_API_KEY") and not os.getenv("OPENAI_API_KEY") else "openai"
+            )
+        )
+        self.embedding_provider = embedding_provider or create_embedding_provider(
+            os.getenv("CORTEXGIT_EMBEDDING_PROVIDER") or "openai"
+        )
+
 
     async def log_event(self, session_id: str, agent_id: str, event_type: str, payload: dict) -> EventLog:
         """
@@ -68,7 +90,7 @@ class CortexGit:
                     "payload": event.payload,
                     "created_at": event.created_at.isoformat() if event.created_at else None
                 }
-                extraction_result = await extract_entities(event_dict)
+                extraction_result = await extract_entities(event_dict, self.llm_provider)
                 
                 detector = ConflictDetector(session)
                 handler = EntityRegistryHandler(session)
@@ -116,8 +138,8 @@ class CortexGit:
                              "created_at": e.created_at.isoformat() if e.created_at else None
                          })
                     
-                    summary_output = await summarize(events_list)
-                    await write_snapshot(session_id, summary_output, session)
+                    summary_output = await summarize(events_list, self.llm_provider)
+                    await write_snapshot(session_id, summary_output, session, self.embedding_provider)
             except Exception:
                 pass
 
@@ -138,7 +160,8 @@ class CortexGit:
                 goal=goal,
                 session_id=session_id,
                 budget_tokens=budget_tokens,
-                session=session
+                session=session,
+                embedding_provider=self.embedding_provider
             )
 
     async def write_entity(self, key: str, value: any, agent_id: str, event_id: str) -> bool:

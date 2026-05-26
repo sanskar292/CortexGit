@@ -102,11 +102,22 @@
 - Added critical dependency requirements (`python-dotenv`, `asyncpg`, and `aiosqlite`) directly to `setup.py` and `pyproject.toml` to prevent missing package imports upon library installation.
 - Standardized package versioning string `"0.1.0"` across exactly 3 files: `setup.py`, `pyproject.toml`, and `src/cortexgit/__init__.py`.
 - Formulated a standard MIT License in the project root under copyright year 2024.
+- Added Multi-Provider LLM and Embedding Support layer in `src/cortexgit/llm_providers/` folder:
+  - Created `LLMProvider` and `EmbeddingProvider` abstract base classes with unified exceptions (`LLMError`, `EmbeddingError`).
+  - Implemented four concrete provider modules (`AnthropicProvider`, `OpenAIProvider`, `OpenRouterProvider`, `OllamaProvider`) supporting both LLM completions and embeddings generation.
+  - Implemented `provider_factory.py` creating instances based on names, reading from environment variables or custom kwargs.
+  - Integrated providers into `CortexGit` client in `src/cortexgit/core/memory.py` and documented all configuration options in `.env.example`.
+  - Wired LLM provider calls in `summarizer.py` and `entity_extractor.py` to use `self.llm_provider`, maintaining compatibility with legacy mocks using dynamic fallback checks.
+  - Wired Embedding provider calls in `embeddings.py`, `semantic_recall.py`, and `context_assembler.py` to use `self.embedding_provider` cleanly.
+  - Built comprehensive unit/mock and integration test suites validating all providers, factory creation, and runtime provider wiring.
+  - Created `docs/PROVIDERS.md` cost and quickstart documentation and updated `README.md`.
 
-*Total System Tests: 58 collected (53 passed offline, 5 marked integration).*
+*Total System Tests: 92 collected (82 passed offline, 10 marked integration).*
 
 ## Known issues:
 - None.
 
 ## Next session starts with:
-- All phases and packaging requirements have been completed, verified, and officially released to PyPI. Next session starts with adding multi-agent coordination capabilities (v0.2.0) or implementing the suggested internal core module restructuring.
+- Implementing multi-agent coordination capabilities (v0.2.0) or adding custom telemetry and logging to LLM provider classes.
+
+
