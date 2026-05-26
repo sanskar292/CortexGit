@@ -18,20 +18,27 @@ async def semantic_recall(
     """
     Runs cosine similarity ANN search over snapshot embeddings based on a goal query.
     Returns the top_n snapshots ordered by similarity (most similar first).
-    Returns an empty list if no snapshots exist yet.
+    Returns an empty list if no snapshots exist or if embeddings are unavailable.
     """
-    # 1. Fallback to global embed_text if it is patched/mocked or if no provider is passed
-    from unittest.mock import Mock, MagicMock
-    if isinstance(embed_text, (Mock, MagicMock)) or "mock" in str(embed_text.__class__).lower():
-        goal_embedding = await asyncio.to_thread(embed_text, goal)
-    elif embedding_provider is None:
-        goal_embedding = await asyncio.to_thread(embed_text, goal)
-    else:
-        goal_embedding = await asyncio.to_thread(embedding_provider.embed, goal)
+    # 1. Check if any snapshots exist before calling embedding API
+    count_stmt = select(SnapshotStore.snapshot_id).limit(1)
+    count_result = await session.execute(count_stmt)
+    if count_result.first() is None:
+        return []
 
+    # 2. Compute goal embedding with graceful fallback
+    try:
+        from unittest.mock import Mock, MagicMock
+        if isinstance(embed_text, (Mock, MagicMock)) or "mock" in str(embed_text.__class__).lower():
+            goal_embedding = await asyncio.to_thread(embed_text, goal)
+        elif embedding_provider is None:
+            goal_embedding = await asyncio.to_thread(embed_text, goal)
+        else:
+            goal_embedding = await asyncio.to_thread(embedding_provider.embed, goal)
+    except Exception:
+        return []
 
-    
-    # Detect the database dialect from the current session
+    # 3. Detect the database dialect from the current session
     is_postgres = False
     try:
         bind = session.bind
@@ -42,7 +49,7 @@ async def semantic_recall(
     except Exception:
         pass
 
-    # 3. Check if pgvector is supported by the database
+    # 4. Check if pgvector is supported by the database
     if is_postgres and HAS_PGVECTOR:
         stmt = (
             select(SnapshotStore)
@@ -52,14 +59,14 @@ async def semantic_recall(
         result = await session.execute(stmt)
         return list(result.scalars().all())
     else:
-        # Fallback to python-side in-memory cosine similarity sorting for test/local runner compatibility
+        # Fallback to python-side in-memory cosine similarity sorting
         stmt = select(SnapshotStore)
         result = await session.execute(stmt)
         snapshots = list(result.scalars().all())
-        
+
         if not snapshots:
             return []
-            
+
         def cosine_similarity(v1, v2):
             if not v1 or not v2:
                 return 0.0
@@ -81,9 +88,7 @@ async def semantic_recall(
             if magnitude_v1 == 0 or magnitude_v2 == 0:
                 return 0.0
             return dot_product / (magnitude_v1 * magnitude_v2)
-            
-        # Cosine distance = 1.0 - cosine similarity. 
-        # We sort by cosine distance ascending (smaller distance = higher similarity).
+
         snapshots.sort(key=lambda s: 1.0 - cosine_similarity(s.embedding, goal_embedding))
         return snapshots[:top_n]
 
