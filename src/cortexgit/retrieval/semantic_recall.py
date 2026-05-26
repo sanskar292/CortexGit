@@ -20,15 +20,12 @@ async def semantic_recall(
     Returns the top_n snapshots ordered by similarity (most similar first).
     Returns an empty list if no snapshots exist yet.
     """
-    # 1. Fallback initialization of embedding provider if not provided
+    # 1. Fallback to global embed_text if no provider is passed (preserves legacy test mocks)
     if embedding_provider is None:
-        from cortexgit.llm_providers.provider_factory import create_embedding_provider
-        embedding_provider = create_embedding_provider(
-            os.getenv("CORTEXGIT_EMBEDDING_PROVIDER") or "openai"
-        )
+        goal_embedding = await asyncio.to_thread(embed_text, goal)
+    else:
+        goal_embedding = await asyncio.to_thread(embedding_provider.embed, goal)
 
-    # 2. Embed the goal string in a separate thread to avoid blocking the event loop
-    goal_embedding = await asyncio.to_thread(embedding_provider.embed, goal)
     
     # Detect the database dialect from the current session
     is_postgres = False
