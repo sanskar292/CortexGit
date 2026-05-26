@@ -54,6 +54,8 @@ class CortexGit:
             self.engine = engine
             self.session_factory = AsyncSessionLocal
 
+        self._initialized = False
+
         # Set up LLM and Embedding Providers
         self.llm_provider = llm_provider or create_llm_provider(
             os.getenv("CORTEXGIT_LLM_PROVIDER") or (
@@ -65,11 +67,21 @@ class CortexGit:
         )
 
 
+    async def _ensure_tables(self):
+        """Create all tables if they don't exist yet."""
+        if self._initialized:
+            return
+        from cortexgit.db.models import Base
+        async with self.engine.begin() as conn:
+            await conn.run_sync(Base.metadata.create_all)
+        self._initialized = True
+
     async def log_event(self, session_id: str, agent_id: str, event_type: str, payload: dict) -> EventLog:
         """
         Append an event to the persistent event log.
         Triggers the entity extraction and snapshot generation pipelines in the background.
         """
+        await self._ensure_tables()
         async with self.session_factory() as session:
             logger = EventLogger(session)
             event = await logger.log_event(
@@ -169,7 +181,8 @@ class CortexGit:
             raise ValueError("budget_tokens must be greater than zero")
         if not session_id or not session_id.strip():
             raise ValueError("session_id must be a non-empty string")
-            
+
+        await self._ensure_tables()
         async with self.session_factory() as session:
             return await assemble(
                 goal=goal,
@@ -184,6 +197,7 @@ class CortexGit:
         Directly writes an entity to the EntityRegistry.
         Checks for conflicts first, logs conflict and raises ConflictError if one is found.
         """
+        await self._ensure_tables()
         event_uuid = uuid.UUID(event_id) if isinstance(event_id, str) else event_id
         async with self.session_factory() as session:
             detector = ConflictDetector(session)

@@ -8,12 +8,12 @@ class OpenRouterProvider(LLMProvider, EmbeddingProvider):
     def __init__(
         self,
         api_key: str = None,
-        model: str = "meta-llama/llama-3-8b-instruct:free",
-        embedding_model: str = "openai/text-embedding-3-small"
+        model: str = None,
+        embedding_model: str = None
     ):
         self.api_key = api_key or os.getenv("OPENROUTER_API_KEY")
-        self.model = model
-        self.embedding_model = embedding_model
+        self.model = model or os.getenv("OPENROUTER_MODEL", "meta-llama/llama-3-8b-instruct:free")
+        self.embedding_model = embedding_model or os.getenv("OPENROUTER_EMBEDDING_MODEL", "openai/text-embedding-3-small")
         self.client = OpenAI(
             base_url="https://openrouter.ai/api/v1",
             api_key=self.api_key,
