@@ -1,4 +1,4 @@
-## Last updated: 2026-05-25
+## Last updated: 2026-05-26
 
 ## Phase: 3
 
@@ -70,6 +70,13 @@
 - Handles `ValidationError` and other API exceptions gracefully within the background pipeline to prevent request/process crashes.
 - Built a comprehensive test suite in [test_entity_extractor.py](file:///f:/aggin/CortexGit/tests/test_entity_extractor.py) verifying valid writes, partial validation failures, invalid key patterns, empty updates handling, and collision logging. All 6 tests pass successfully.
 
+### SDK Packaging & Distribution (Final Release)
+- Restructured all modules with appropriate `__init__.py` files to ensure seamless auto-discovery via `setuptools`.
+- Configured `.github/workflows/tests.yml` to run automated testing, linting (`ruff`), and code formatting (`black`) using a PostgreSQL service container on every commit or pull request.
+- Verified local installation in an isolated virtual environment (`test_env`) using `python -m build` and `pip install`.
+- Published the official release version `v0.1.0` to PyPI, enabling global installation via `pip install cortexgit`.
+- Created comprehensive developer and user documentation including `docs/GETTING_STARTED.md`, `docs/API_REFERENCE.md`, `CONTRIBUTING.md`, `RELEASE_CHECKLIST.md`, and streamlined `.env.example`.
+
 
 ## Decisions made:
 - Integrated an automatic fallback for the `embedding` column: if the `vector` extension is not registered on the PostgreSQL server, the column gracefully maps to `postgresql.ARRAY(Float)`.
@@ -92,6 +99,9 @@
 - Implemented transactional collision-handling and rollbacks on duplicate concurrent keys inside the background pipeline, aligning perfectly with the core `POST /entities` controller.
 - Upgraded test suite mock frameworks (`test_snapshot_write.py`) to process lists of concurrent background tasks, correcting mock-collision behavior.
 - Implemented and verified the full end-to-end integration test (`tests/test_e2e_full_pipeline.py`) posting 50 realistic events, draining background tasks (triggering both entity extraction and snapshotting), validating strict token budget packing in `GET /context`, writing a 51st event triggering a conflict, and verifying the conflict shows up in `/context`.
+- Added critical dependency requirements (`python-dotenv`, `asyncpg`, and `aiosqlite`) directly to `setup.py` and `pyproject.toml` to prevent missing package imports upon library installation.
+- Standardized package versioning string `"0.1.0"` across exactly 3 files: `setup.py`, `pyproject.toml`, and `src/cortexgit/__init__.py`.
+- Formulated a standard MIT License in the project root under copyright year 2024.
 
 *Total System Tests: 58 collected (53 passed offline, 5 marked integration).*
 
@@ -99,4 +109,4 @@
 - None.
 
 ## Next session starts with:
-- Phase 3 is fully implemented, all core backend requirements are complete, and end-to-end integration tests are verified and ready for deployment. Next session starts with developer review, production deployment preparation, or integration with external agents.
+- All phases and packaging requirements have been completed, verified, and officially released to PyPI. Next session starts with adding multi-agent coordination capabilities (v0.2.0) or implementing the suggested internal core module restructuring.
