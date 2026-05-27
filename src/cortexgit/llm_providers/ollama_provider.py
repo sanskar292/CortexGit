@@ -1,4 +1,5 @@
 import json
+import os
 import urllib.request
 from urllib.error import URLError, HTTPError
 from cortexgit.llm_providers.base import LLMProvider, EmbeddingProvider, LLMError, EmbeddingError
@@ -6,10 +7,10 @@ from cortexgit.llm_providers.base import LLMProvider, EmbeddingProvider, LLMErro
 class OllamaProvider(LLMProvider, EmbeddingProvider):
     """Ollama provider for local LLM and embedding support using the standard HTTP API."""
 
-    def __init__(self, base_url: str = "http://localhost:11434", model: str = "llama3", embedding_model: str = "nomic-embed-text"):
-        self.base_url = base_url.rstrip('/')
-        self.model = model
-        self.embedding_model = embedding_model
+    def __init__(self, base_url: str = None, model: str = None, embedding_model: str = None):
+        self.base_url = (base_url or os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")).rstrip('/')
+        self.model = model or os.getenv("OLLAMA_MODEL", "llama3")
+        self.embedding_model = embedding_model or os.getenv("OLLAMA_EMBEDDING_MODEL", "nomic-embed-text")
 
     def complete(self, system_prompt: str, user_message: str) -> str:
         url = f"{self.base_url}/api/chat"

@@ -20,7 +20,9 @@ async def extract_entities(event: dict, llm_provider: LLMProvider = None) -> dic
         "You are an entity extractor for an AI agent memory system.\n"
         "You will receive a single agent event.\n"
         "Extract any named entities, decisions, goals, or facts that should be remembered.\n"
-        "Keys must be lowercase with dots and underscores only. Example: project.current_goal\n"
+        "Keys must be lowercase letters, digits, dots, and underscores ONLY. No hyphens, no spaces.\n"
+        "  BAD key:  'user-name', 'gemma-session-1'\n"
+        "  GOOD key: 'user.name', 'session.id'\n"
         "Return only valid JSON matching this schema exactly:\n"
         '{ "updates": [{ "key": string, "value": any }] }\n'
         "No preamble. No explanation. No markdown. Raw JSON only.\n"
@@ -70,9 +72,28 @@ async def extract_entities(event: dict, llm_provider: LLMProvider = None) -> dic
 
     parsed_output = json.loads(response_text)
 
+    # Sanitize keys produced by small models that don't follow the format precisely:
+    # lowercase, replace any character that isn't [a-z0-9_.] with underscore, strip edges.
+    import re
+    _VALID_KEY = re.compile(r'^[a-z0-9_.]+$')
+    sanitized_updates = []
+    for update in parsed_output.get("updates", []):
+        key = update.get("key")
+        if not isinstance(key, str):
+            continue
+        key = key.lower()
+        key = re.sub(r'[^a-z0-9_.]', '_', key)  # replace invalid chars
+        key = re.sub(r'_+', '_', key).strip('_.')  # collapse runs, strip edges
+        if not key or not _VALID_KEY.match(key):
+            continue  # still invalid after sanitization — silently drop
+        update["key"] = key
+        sanitized_updates.append(update)
+    parsed_output["updates"] = sanitized_updates
+
     # 5. Pass output through WriteBackGate with schema_name="entity_extraction"
     gate = WriteBackGate()
     validated_output = gate.validate(parsed_output, "entity_extraction")
+
 
     return validated_output
 
