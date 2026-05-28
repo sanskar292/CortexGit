@@ -14,6 +14,9 @@ from sqlalchemy import (
     Float,
     String,
     UUID,
+    Integer,
+    UniqueConstraint,
+    Index,
 )
 from sqlalchemy.types import TypeDecorator
 from sqlalchemy.orm import declarative_base, relationship
@@ -254,3 +257,68 @@ class ConflictLog(Base):
     # Relationships
     existing_event = relationship("EventLog", foreign_keys=[existing_event_id])
     proposed_event = relationship("EventLog", foreign_keys=[proposed_event_id])
+
+
+class EntityNodeType(str, PyEnum):
+    PROJECT = "project"
+    CONCEPT = "concept"
+    PERSON = "person"
+
+
+class HitType(str, PyEnum):
+    QUERY = "query"
+    UPDATE = "update"
+    INFERENCE = "inference"
+
+
+class EntityNode(Base):
+    __tablename__ = "entity_nodes"
+
+    node_id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    entity_name = Column(Text, index=True, nullable=False)   # uniqueness scoped to agent; see __table_args__
+    entity_type = Column(Enum(EntityNodeType, native_enum=True), nullable=False)
+    description = Column(Text, nullable=True)
+    status = Column(Text, nullable=True)
+    degree_centrality = Column(Float, nullable=False, default=0.0)
+    hit_frequency = Column(Integer, nullable=False, default=0)
+    last_hit = Column(DateTime(timezone=True), nullable=True)
+    ttl_expiry = Column(DateTime(timezone=True), index=True, nullable=True)
+    created_at = Column(DateTime(timezone=True), nullable=False, default=lambda: datetime.now(timezone.utc))
+    agent_id = Column(Text, index=True, nullable=False)
+
+    __table_args__ = (
+        # Per-agent uniqueness: same entity_name is allowed for different agents
+        UniqueConstraint("entity_name", "agent_id", name="uq_entity_nodes_name_agent"),
+        Index("ix_entity_nodes_name_agent", "entity_name", "agent_id"),
+    )
+
+
+class EntityEdge(Base):
+    __tablename__ = "entity_edges"
+
+    edge_id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    source_node_id = Column(UUID(as_uuid=True), ForeignKey("entity_nodes.node_id"), nullable=False)
+    target_node_id = Column(UUID(as_uuid=True), ForeignKey("entity_nodes.node_id"), nullable=False)
+    relation_type = Column(Text, nullable=False)
+    weight = Column(Float, nullable=False, default=1.0)
+    created_at = Column(DateTime(timezone=True), nullable=False, default=lambda: datetime.now(timezone.utc))
+
+    __table_args__ = (
+        UniqueConstraint("source_node_id", "target_node_id", "relation_type", name="uq_entity_edges_source_target_relation"),
+        Index("ix_entity_edges_source_target", "source_node_id", "target_node_id"),
+    )
+
+
+class NodeHit(Base):
+    __tablename__ = "node_hits"
+
+    hit_id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    node_id = Column(UUID(as_uuid=True), ForeignKey("entity_nodes.node_id"), nullable=False)
+    hit_type = Column(Enum(HitType, native_enum=True), nullable=False)
+    hit_timestamp = Column(DateTime(timezone=True), nullable=False, default=lambda: datetime.now(timezone.utc))
+    session_id = Column(Text, nullable=False)
+
+    __table_args__ = (
+        Index("ix_node_hits_node_id_timestamp", "node_id", "hit_timestamp"),
+    )
+

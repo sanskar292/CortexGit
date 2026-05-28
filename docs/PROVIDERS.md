@@ -61,6 +61,18 @@ Configure active providers and options in your `.env` file. See the examples bel
   OLLAMA_EMBEDDING_MODEL=nomic-embed-text
   ```
 
+### 5. LM Studio (Local & OpenAI-Compatible)
+- **Use Case:** Local GUI-based LLM running with zero API costs.
+- **Note:** LM Studio runs an OpenAI-compatible API by default. It works seamlessly with `OllamaProvider` by pointing the `OLLAMA_BASE_URL` to the LM Studio server (default: `http://localhost:8000`).
+- **Configuration:**
+  ```env
+  CORTEXGIT_LLM_PROVIDER=ollama
+  CORTEXGIT_EMBEDDING_PROVIDER=ollama
+  OLLAMA_BASE_URL=http://localhost:8000
+  OLLAMA_MODEL=your-loaded-model-name
+  OLLAMA_EMBEDDING_MODEL=your-loaded-embedding-model-name
+  ```
+
 ---
 
 ## Cost & Capability Comparison
@@ -71,6 +83,7 @@ Configure active providers and options in your `.env` file. See the examples bel
 | **Anthropic** | Complex Reasoning | `claude-3-5-sonnet-20241022` | N/A | ~$3.00 (Input) / ~$15.00 (Output) | No |
 | **OpenRouter** | Multi-Model Flexibility | `meta-llama/llama-3-8b-instruct:free` | `openai/text-embedding-3-small` | Variable (Free to Premium) | Yes (via gateway) |
 | **Ollama** | 100% Local & Private | `llama3` | `nomic-embed-text` | **$0.00** (Free/Offline) | Yes |
+| **LM Studio** | 100% Local & Private, GUI | *(Loaded Model)* | *(Loaded Model)* | **$0.00** (Free/Offline) | Yes (OpenAI-compatible) |
 
 ---
 

@@ -30,7 +30,10 @@ class CortexGit:
         self,
         database_url: str = None,
         llm_provider: LLMProvider = None,
-        embedding_provider: EmbeddingProvider = None
+        embedding_provider: EmbeddingProvider = None,
+        enable_injection: bool = True,
+        injection_threshold: float = None,
+        injection_top_k: int = None
     ):
         """
         Initialize the CortexGit SDK persistent memory client.
@@ -41,6 +44,9 @@ class CortexGit:
             database_url: Optional database connection URL. Defaults to DATABASE_URL env var.
             llm_provider: Optional custom LLM provider instance. Defaults to env-configured provider.
             embedding_provider: Optional custom embedding provider instance. Defaults to env-configured provider.
+            enable_injection: Whether proactive surface injection is enabled. Defaults to True.
+            injection_threshold: Optional minimum importance score for injection. Defaults to INJECTION_IMPORTANCE_THRESHOLD env var, else 5.0.
+            injection_top_k: Optional maximum number of injected entities. Defaults to INJECTION_TOP_K env var, else 3.
         """
         if database_url:
             from sqlalchemy.pool import NullPool
@@ -65,6 +71,22 @@ class CortexGit:
         self.embedding_provider = embedding_provider or create_embedding_provider(
             os.getenv("CORTEXGIT_EMBEDDING_PROVIDER") or "openai"
         )
+
+        self.enable_injection = enable_injection
+        
+        if injection_threshold is None:
+            try:
+                injection_threshold = float(os.getenv("INJECTION_IMPORTANCE_THRESHOLD", "5.0"))
+            except ValueError:
+                injection_threshold = 5.0
+        self.injection_threshold = injection_threshold
+
+        if injection_top_k is None:
+            try:
+                injection_top_k = int(os.getenv("INJECTION_TOP_K", "3"))
+            except ValueError:
+                injection_top_k = 3
+        self.injection_top_k = injection_top_k
 
 
     async def _ensure_tables(self):
@@ -167,7 +189,14 @@ class CortexGit:
                     session_id,
                 )
 
-    async def get_context(self, goal: str, budget_tokens: int, session_id: str) -> dict:
+    async def get_context(
+        self,
+        goal: str,
+        budget_tokens: int,
+        session_id: str,
+        use_reg: bool = True,
+        agent_id: str = None
+    ) -> dict:
         """
         Retrieves context containing recent events, relevant snapshots, entities, and open conflicts
         packed cleanly under the budget token limit.
@@ -189,7 +218,12 @@ class CortexGit:
                 session_id=session_id,
                 budget_tokens=budget_tokens,
                 session=session,
-                embedding_provider=self.embedding_provider
+                embedding_provider=self.embedding_provider,
+                use_reg=use_reg,
+                agent_id=agent_id,
+                enable_injection=self.enable_injection,
+                injection_threshold=self.injection_threshold,
+                injection_top_k=self.injection_top_k,
             )
 
     async def write_entity(self, key: str, value: any, agent_id: str, event_id: str) -> bool:

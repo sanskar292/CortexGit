@@ -183,3 +183,27 @@ def test_snapshot_store_immutability_constraint():
         assert result.rowcount == 1
 
     engine.dispose()
+
+
+def test_reg_indexes_exist():
+    engine = create_engine(TEST_DB_URL_SYNC)
+    inspector = inspect(engine)
+    
+    # 1. Get indexes for entity_nodes
+    indexes_nodes = inspector.get_indexes("entity_nodes")
+    node_index_names = {idx["name"] for idx in indexes_nodes if idx["name"]}
+    assert "ix_entity_nodes_entity_name" in node_index_names
+    assert "ix_entity_nodes_agent_id" in node_index_names
+    assert "ix_entity_nodes_ttl_expiry" in node_index_names
+
+    # 2. Get indexes for entity_edges
+    indexes_edges = inspector.get_indexes("entity_edges")
+    edge_index_names = {idx["name"] for idx in indexes_edges if idx["name"]}
+    assert "ix_entity_edges_source_target" in edge_index_names
+
+    # 3. Get indexes for node_hits
+    indexes_hits = inspector.get_indexes("node_hits")
+    hit_index_names = {idx["name"] for idx in indexes_hits if idx["name"]}
+    assert "ix_node_hits_node_id_timestamp" in hit_index_names
+
+    engine.dispose()

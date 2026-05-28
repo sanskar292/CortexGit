@@ -1,0 +1,47 @@
+{
+  "type": "object",
+  "required": ["entity_name", "entity_type", "connected_to"],
+  "additionalProperties": false,
+  "properties": {
+    "entity_name": {
+      "type": "string",
+      "minLength": 1
+    },
+    "entity_type": {
+      "type": "string",
+      "enum": ["project", "concept", "person"]
+    },
+    "properties": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "description": {
+          "type": "string",
+          "minLength": 1
+        },
+        "status": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "connected_to": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["target_entity", "relation_type"],
+        "additionalProperties": false,
+        "properties": {
+          "target_entity": {
+            "type": "string",
+            "minLength": 1
+          },
+          "relation_type": {
+            "type": "string",
+            "minLength": 1
+          }
+        }
+      }
+    }
+  }
+}
