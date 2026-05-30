@@ -54,3 +54,6 @@ htmlcov/
 
 # Generated files
 cortexgit.egg-info/
+
+# Kiro Gateway
+kiro-gateway/
