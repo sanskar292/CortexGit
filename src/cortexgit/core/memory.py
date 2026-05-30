@@ -2,6 +2,7 @@
 import os
 import logging
 import uuid
+from typing import Any
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy import select
@@ -63,14 +64,35 @@ class CortexGit:
         self._initialized = False
 
         # Set up LLM and Embedding Providers
-        self.llm_provider = llm_provider or create_llm_provider(
-            os.getenv("CORTEXGIT_LLM_PROVIDER") or (
-                "anthropic" if os.getenv("ANTHROPIC_API_KEY") and not os.getenv("OPENAI_API_KEY") else "openai"
-            )
-        )
-        self.embedding_provider = embedding_provider or create_embedding_provider(
-            os.getenv("CORTEXGIT_EMBEDDING_PROVIDER") or "openai"
-        )
+        if llm_provider is not None:
+            self.llm_provider = llm_provider
+        else:
+            explicit_provider = os.getenv("CORTEXGIT_LLM_PROVIDER")
+            if explicit_provider:
+                self.llm_provider = create_llm_provider(explicit_provider)
+            elif os.getenv("ANTHROPIC_API_KEY"):
+                self.llm_provider = create_llm_provider("anthropic")
+            elif os.getenv("OPENAI_API_KEY"):
+                self.llm_provider = create_llm_provider("openai")
+            else:
+                raise ValueError(
+                    "No LLM provider configured. Set CORTEXGIT_LLM_PROVIDER, "
+                    "ANTHROPIC_API_KEY, or OPENAI_API_KEY."
+                )
+
+        if embedding_provider is not None:
+            self.embedding_provider = embedding_provider
+        else:
+            explicit_provider = os.getenv("CORTEXGIT_EMBEDDING_PROVIDER")
+            if explicit_provider:
+                self.embedding_provider = create_embedding_provider(explicit_provider)
+            elif os.getenv("OPENAI_API_KEY"):
+                self.embedding_provider = create_embedding_provider("openai")
+            else:
+                raise ValueError(
+                    "No embedding provider configured. Set CORTEXGIT_EMBEDDING_PROVIDER "
+                    "or OPENAI_API_KEY."
+                )
 
         self.enable_injection = enable_injection
         
@@ -226,7 +248,7 @@ class CortexGit:
                 injection_top_k=self.injection_top_k,
             )
 
-    async def write_entity(self, key: str, value: any, agent_id: str, event_id: str) -> bool:
+    async def write_entity(self, key: str, value: Any, agent_id: str, event_id: str) -> bool:
         """
         Directly writes an entity to the EntityRegistry.
         Checks for conflicts first, logs conflict and raises ConflictError if one is found.
@@ -255,19 +277,5 @@ class CortexGit:
                     agent_id=agent_id,
                     event_id=event_uuid
                 )
-            except Exception as e:
-                # Handle unique constraint collisions gracefully (crucial for SQLite concurrency)
-                await session.rollback()
-                async with self.session_factory() as check_session:
-                    check_detector = ConflictDetector(check_session)
-                    conflict = await check_detector.detect_conflict(key, value)
-                    if conflict:
-                        await check_detector.log_conflict(
-                            key=key,
-                            existing_value=conflict.value,
-                            proposed_value=value,
-                            existing_event_id=conflict.event_id,
-                            proposed_event_id=event_uuid
-                        )
-                        raise ConflictError(f"Conflict detected on key '{key}'")
-                raise e
+            except ValueError as e:
+                raise ConflictError(f"Conflict detected on key '{key}': {e}") from e

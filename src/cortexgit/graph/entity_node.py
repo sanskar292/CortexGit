@@ -32,7 +32,7 @@ except Exception:
             },
             "properties": {
                 "type": "object",
-                "additionalProperties": false,
+                "additionalProperties": False,
                 "properties": {
                     "description": {
                         "type": "string",
@@ -49,7 +49,7 @@ except Exception:
                 "items": {
                     "type": "object",
                     "required": ["target_entity", "relation_type"],
-                    "additionalProperties": false,
+                    "additionalProperties": False,
                     "properties": {
                         "target_entity": {
                             "type": "string",

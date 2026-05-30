@@ -21,6 +21,8 @@ class AnthropicProvider(LLMProvider, EmbeddingProvider):
                     {"role": "user", "content": user_message}
                 ]
             )
+            if not message.content:
+                raise LLMError("Anthropic returned an empty content array.")
             return message.content[0].text
         except AnthropicError as e:
             raise LLMError(f"Anthropic API error: {str(e)}") from e

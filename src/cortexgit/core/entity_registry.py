@@ -1,6 +1,8 @@
 # Core entity registry module (Phase 1)
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
+from typing import Any
 import uuid
 from datetime import datetime, timezone
 from cortexgit.db.models import EntityRegistry, EventLog, EventType
@@ -10,7 +12,7 @@ class EntityRegistryHandler:
     def __init__(self, session: AsyncSession):
         self.session = session
 
-    async def write_entity(self, key: str, value: any, agent_id: str, event_id: uuid.UUID) -> bool:
+    async def write_entity(self, key: str, value: Any, agent_id: str, event_id: uuid.UUID) -> bool:
         """
         Write entity cleanly to the registry.
         Assumes conflict check has already passed.
@@ -32,7 +34,7 @@ class EntityRegistryHandler:
                     f"Entity registry write collision on key '{key}' with differing value."
                 )
 
-        # Clean write
+        # Clean write — IntegrityError here means a concurrent writer raced us to insert the same key
         entity = EntityRegistry(
             key=key,
             value=value,
@@ -41,5 +43,11 @@ class EntityRegistryHandler:
             updated_at=datetime.now(timezone.utc)
         )
         self.session.add(entity)
-        await self.session.commit()
+        try:
+            await self.session.commit()
+        except IntegrityError as e:
+            await self.session.rollback()
+            raise ValueError(
+                f"Entity registry write collision on key '{key}' — concurrent insert detected."
+            ) from e
         return True

@@ -1,7 +1,6 @@
 import os
 import json
 import asyncio
-from anthropic import AsyncAnthropic
 from sqlalchemy.ext.asyncio import AsyncSession
 from cortexgit.core.write_back_gate import WriteBackGate, ValidationError
 from cortexgit.db.models import SnapshotStore
@@ -30,36 +29,19 @@ async def summarize(events: list[dict], llm_provider: LLMProvider = None) -> dic
         "No preamble. No explanation. No markdown. Raw JSON only."
     )
 
-    # 3. Dynamic mock check to support legacy unit tests that patch AsyncAnthropic
-    from unittest.mock import Mock, MagicMock
-    if isinstance(AsyncAnthropic, (Mock, MagicMock)) or "mock" in str(AsyncAnthropic.__class__).lower():
-        client = AsyncAnthropic()
-        response = await client.messages.create(
-            model="claude-sonnet-4-20250514",
-            max_tokens=4096,
-            system=system_prompt,
-            messages=[
-                {
-                    "role": "user",
-                    "content": f"Here is the sequence of events:\n{events_str}"
-                }
-            ]
-        )
-        response_text = response.content[0].text.strip()
-    else:
-        # Fallback initialization of LLM provider if not provided
-        if llm_provider is None:
-            from cortexgit.llm_providers.provider_factory import create_llm_provider
-            llm_provider = create_llm_provider(
-                os.getenv("CORTEXGIT_LLM_PROVIDER") or (
-                    "anthropic" if os.getenv("ANTHROPIC_API_KEY") and not os.getenv("OPENAI_API_KEY") else "openai"
-                )
+    # 3. Initialize LLM provider if not provided
+    if llm_provider is None:
+        from cortexgit.llm_providers.provider_factory import create_llm_provider
+        llm_provider = create_llm_provider(
+            os.getenv("CORTEXGIT_LLM_PROVIDER") or (
+                "anthropic" if os.getenv("ANTHROPIC_API_KEY") and not os.getenv("OPENAI_API_KEY") else "openai"
             )
+        )
 
-        # Call LLM API using the provider complete() method run in a separate thread to avoid blocking
-        user_message = f"Here is the sequence of events:\n{events_str}"
-        response_text = await asyncio.to_thread(llm_provider.complete, system_prompt, user_message)
-        response_text = response_text.strip()
+    # Call LLM API using the provider complete() method run in a separate thread to avoid blocking
+    user_message = f"Here is the sequence of events:\n{events_str}"
+    response_text = await asyncio.to_thread(llm_provider.complete, system_prompt, user_message)
+    response_text = response_text.strip()
 
     # 4. Parse the response text as JSON
     # Handle optional markdown code block wrapping from the model output defensively
@@ -71,7 +53,10 @@ async def summarize(events: list[dict], llm_provider: LLMProvider = None) -> dic
         response_text = response_text[:-3]
     response_text = response_text.strip()
 
-    parsed_output = json.loads(response_text)
+    try:
+        parsed_output = json.loads(response_text)
+    except json.JSONDecodeError as e:
+        raise ValidationError(f"LLM returned invalid JSON: {e}. Raw response: {response_text!r}") from e
 
     # 5. Pass output through WriteBackGate with schema_name="snapshot"
     gate = WriteBackGate()

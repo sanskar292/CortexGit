@@ -53,6 +53,8 @@ class OllamaProvider(LLMProvider, EmbeddingProvider):
             with urllib.request.urlopen(req, timeout=30) as response:
                 res_data = json.loads(response.read().decode('utf-8'))
                 if is_openai or 'choices' in res_data:
+                    if not res_data.get('choices'):
+                        raise LLMError(f"Ollama returned an empty choices array. Response: {res_data}")
                     return res_data['choices'][0]['message']['content']
                 return res_data['message']['content']
         except HTTPError as e:
@@ -86,6 +88,8 @@ class OllamaProvider(LLMProvider, EmbeddingProvider):
                 res_data = json.loads(response.read().decode('utf-8'))
                 
                 if is_openai or 'data' in res_data:
+                    if not res_data.get('data'):
+                        raise EmbeddingError(f"Ollama returned an empty data array. Response: {res_data}")
                     return res_data['data'][0]['embedding']
 
                 # Check for standard 'embeddings' array or 'embedding' fallback

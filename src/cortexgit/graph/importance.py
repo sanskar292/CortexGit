@@ -2,12 +2,17 @@ import os
 import uuid
 from datetime import datetime, timezone
 from typing import List
-from sqlalchemy import select
+from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 from cortexgit.db.models import EntityNode
 
 HIT_FREQUENCY_WEIGHT = float(os.getenv("HIT_FREQUENCY_WEIGHT", "1.0"))
 DEGREE_CENTRALITY_WEIGHT = float(os.getenv("DEGREE_CENTRALITY_WEIGHT", "1.0"))
+
+
+def compute_importance(degree_centrality: float, hit_frequency: float) -> float:
+    """Weighted importance score: (degree_centrality * DEGREE_WEIGHT) + (hit_frequency * HIT_WEIGHT)."""
+    return (degree_centrality * DEGREE_CENTRALITY_WEIGHT) + (hit_frequency * HIT_FREQUENCY_WEIGHT)
 
 
 async def calculate_importance(node_id: uuid.UUID, session: AsyncSession) -> float:
@@ -24,8 +29,7 @@ async def calculate_importance(node_id: uuid.UUID, session: AsyncSession) -> flo
 
     deg_weighted = float(node.degree_centrality) * DEGREE_CENTRALITY_WEIGHT
     hit_weighted = float(node.hit_frequency) * HIT_FREQUENCY_WEIGHT
-    return deg_weighted * hit_weighted
-
+    return deg_weighted + hit_weighted
 
 async def rank_nodes_by_importance(
     agent_id: str,
@@ -33,27 +37,27 @@ async def rank_nodes_by_importance(
     top_k: int = None,
 ) -> List[EntityNode]:
     """
-    Fetch all active nodes (ttl_expiry > now) for agent.
-    Sort by weighted importance (degree_centrality * hit_frequency) descending.
-
-    If top_k is provided, only the top-k results are returned — avoids sorting the
-    entire node set when the caller only needs the highest-ranked entries.
+    Fetch active nodes (ttl_expiry > now) for agent, sorted by weighted importance descending.
+    Pushes ORDER BY and LIMIT into SQL to avoid loading the full node set into memory.
     """
     now = datetime.now(timezone.utc)
-    result = await session.execute(
-        select(EntityNode).where(
+    importance_expr = (
+        EntityNode.degree_centrality * DEGREE_CENTRALITY_WEIGHT
+    ) + (
+        EntityNode.hit_frequency * HIT_FREQUENCY_WEIGHT
+    )
+    stmt = (
+        select(EntityNode)
+        .where(
             EntityNode.agent_id == agent_id,
-            EntityNode.ttl_expiry > now
+            EntityNode.ttl_expiry > now,
         )
+        .order_by(importance_expr.desc())
     )
-    nodes = list(result.scalars().all())
-
-    # Sort descending by weighted importance
-    nodes.sort(
-        key=lambda n: (float(n.degree_centrality) * DEGREE_CENTRALITY_WEIGHT) * (float(n.hit_frequency) * HIT_FREQUENCY_WEIGHT),
-        reverse=True
-    )
-    return nodes[:top_k] if top_k is not None else nodes
+    if top_k is not None:
+        stmt = stmt.limit(top_k)
+    result = await session.execute(stmt)
+    return list(result.scalars().all())
 
 
 async def get_top_k_important_nodes(
@@ -83,11 +87,7 @@ async def get_high_importance_nodes(
     # 2. Filter nodes where importance > threshold
     filtered_nodes = []
     for node in nodes:
-        importance = (
-            float(node.degree_centrality) * DEGREE_CENTRALITY_WEIGHT
-        ) * (
-            float(node.hit_frequency) * HIT_FREQUENCY_WEIGHT
-        )
+        importance = compute_importance(float(node.degree_centrality), float(node.hit_frequency))
         if importance > threshold:
             filtered_nodes.append(node)
 

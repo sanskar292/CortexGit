@@ -8,6 +8,7 @@ from cortexgit.core.recency_filter import RecencyFilter
 from cortexgit.retrieval.semantic_recall import semantic_recall
 from cortexgit.core.entity_pull import entity_pull, entity_pull_with_reg
 from cortexgit.llm_providers import EmbeddingProvider
+from cortexgit.graph.importance import compute_importance
 
 
 def serialize_conflict(c: ConflictLog) -> dict:
@@ -35,9 +36,11 @@ def serialize_event(e) -> dict:
 def serialize_snapshot(s) -> dict:
     event_range_val = None
     if s.event_range is not None:
-        try:
+        if hasattr(s.event_range, "lower") and hasattr(s.event_range, "upper"):
             event_range_val = [s.event_range.lower, s.event_range.upper]
-        except Exception:
+        elif isinstance(s.event_range, (tuple, list)) and len(s.event_range) >= 2:
+            event_range_val = [s.event_range[0], s.event_range[1]]
+        else:
             event_range_val = list(s.event_range)
 
     return {
@@ -84,7 +87,7 @@ async def assemble(
     """
     # 1. Fetch data from internal modules
     # Fetch open (unresolved) conflicts
-    stmt = select(ConflictLog).where(ConflictLog.resolved == False)
+    stmt = select(ConflictLog).where(ConflictLog.resolved.is_(False))
     result = await session.execute(stmt)
     conflicts = list(result.scalars().all())
     # Sort conflicts deterministically by ID to guarantee same output for same inputs
@@ -106,24 +109,30 @@ async def assemble(
         entities = None  # not used in REG path
     else:
         entities = await entity_pull(goal, session, session_id=session_id)
-        entities_reg = None  # not used in legacy path
+        entities_reg = None
 
     # Retrieve injected high-importance nodes
     injected_nodes = []
     if use_reg and agent_id and enable_injection:
         from cortexgit.graph.injection import inject_high_importance_nodes
-        k_val = injection_top_k if injection_top_k is not None else 3
-        injected_nodes = await inject_high_importance_nodes(
-            goal=goal,
-            agent_id=agent_id,
-            session=session,
-            k=k_val,
-            semantic_results=snapshots,
-        )
+        try:
+            k_val = injection_top_k if injection_top_k is not None else 3
+            injected_nodes = await inject_high_importance_nodes(
+                goal=goal,
+                agent_id=agent_id,
+                session=session,
+                k=k_val,
+                semantic_results=snapshots,
+            ) or []
+        except Exception:
+            import logging
+            logging.getLogger(__name__).exception(
+                "[cortexgit] inject_high_importance_nodes failed for agent_id=%s", agent_id
+            )
         if injection_threshold is not None:
             injected_nodes = [
                 node for node in injected_nodes
-                if (float(node.degree_centrality) * float(node.hit_frequency)) > injection_threshold
+                if compute_importance(float(node.degree_centrality), float(node.hit_frequency)) > injection_threshold
             ]
 
     # 2. Pack results into the budget
@@ -162,10 +171,13 @@ async def assemble(
         #   Priority 5: Injected high-importance nodes (if budget allows)
         # ----------------------------------------------------------------
         HIGH_THRESHOLD = 10.0
+        MEDIUM_THRESHOLD = 5.0
 
         # entity_pull_with_reg() already returns nodes sorted descending by importance.
         # Partition into tiers while preserving that inner order.
         high_entities = [n for n in entities_reg if n["importance"] > HIGH_THRESHOLD]
+        medium_entities = [n for n in entities_reg if MEDIUM_THRESHOLD <= n["importance"] <= HIGH_THRESHOLD]
+        low_entities = [n for n in entities_reg if n["importance"] < MEDIUM_THRESHOLD]
 
         def pack_reg_entities(entity_list: list) -> None:
             """Pack REG entity dicts into assembled_entities within budget."""
@@ -191,7 +203,13 @@ async def assemble(
             else:
                 break
 
-        # Priority 5: Injected high-importance nodes (if budget allows)
+        # Priority 5: Medium-importance entities (5 <= importance <= 10)
+        pack_reg_entities(medium_entities)
+
+        # Priority 6: Low-importance entities (importance < 5)
+        pack_reg_entities(low_entities)
+
+        # Priority 7: Injected high-importance nodes (if budget allows)
         for node in injected_nodes:
             if node.entity_name in assembled_entities:
                 continue
@@ -203,7 +221,7 @@ async def assemble(
                 "status": node.status,
                 "degree_centrality": float(node.degree_centrality),
                 "hit_frequency": node.hit_frequency,
-                "importance": float(node.degree_centrality) * float(node.hit_frequency),
+                "importance": compute_importance(float(node.degree_centrality), float(node.hit_frequency)),
                 "injected": True,
             }
             tokens = len(json.dumps({node.entity_name: node_dict})) // 4
@@ -244,17 +262,15 @@ async def assemble(
             else:
                 break
 
-    # Reinforce hit recording in background for injected entities
+    # Reinforce hit recording in background for assembled entities
     if session_id and assembled_entities:
         import asyncio
-        from cortexgit.core.entity_pull import record_hit_in_background
-
-        async def record_hit_with_delay(key, session_id):
-            await asyncio.sleep(0.1)
-            await record_hit_in_background(key, session_id)
+        import logging
+        from cortexgit.core.entity_pull import record_hit_in_background, _log_task_exception
 
         for key in assembled_entities.keys():
-            asyncio.create_task(record_hit_with_delay(key, session_id))
+            task = asyncio.create_task(record_hit_in_background(key, session_id, agent_id=agent_id))
+            task.add_done_callback(_log_task_exception)
 
     ret = {
         "events": assembled_events,

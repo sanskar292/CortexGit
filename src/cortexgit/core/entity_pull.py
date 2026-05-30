@@ -3,26 +3,37 @@ import re
 import asyncio
 import logging
 from typing import List
+
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from cortexgit.db.models import EntityRegistry, EntityNode
-from cortexgit.graph.importance import HIT_FREQUENCY_WEIGHT, DEGREE_CENTRALITY_WEIGHT
+from cortexgit.graph.importance import HIT_FREQUENCY_WEIGHT, DEGREE_CENTRALITY_WEIGHT, compute_importance
 
-async def record_hit_in_background(entity_name: str, session_id: str):
+
+def _log_task_exception(task: asyncio.Task) -> None:
+    if not task.cancelled() and task.exception() is not None:
+        logging.getLogger(__name__).exception(
+            "Background task '%s' raised an exception", task.get_name(), exc_info=task.exception()
+        )
+
+async def record_hit_in_background(entity_name: str, session_id: str, agent_id: str = None):
     """
     Non-blocking background helper to fetch an entity node and record a retrieval hit.
     Uses a fresh AsyncSessionLocal transaction to prevent request session collisions.
+    agent_id scopes the lookup to the correct agent when provided.
     """
     from cortexgit.db.database import AsyncSessionLocal
     from cortexgit.graph.graph_repository import GraphRepository
-    
+
     logger = logging.getLogger(__name__)
     try:
         async with AsyncSessionLocal() as session:
             repo = GraphRepository(session)
-            node = await repo.get_node(entity_name)
+            node = await repo.get_node(entity_name, agent_id=agent_id)
             if node:
                 await repo.record_hit(node.node_id, hit_type="query", session_id=session_id)
+    except asyncio.CancelledError:
+        raise
     except Exception as e:
         logger.exception(f"Failed to record hit in background for entity '{entity_name}': {e}")
 
@@ -57,7 +68,8 @@ async def entity_pull(goal: str, session: AsyncSession, session_id: str = None) 
     # 4. Trigger graph node retrieval reinforcement in the background
     if session_id and matched:
         for key in matched.keys():
-            asyncio.create_task(record_hit_in_background(key, session_id))
+            task = asyncio.create_task(record_hit_in_background(key, session_id))
+            task.add_done_callback(_log_task_exception)
 
     return matched
 
@@ -103,11 +115,7 @@ async def entity_pull_with_reg(
 
     # 4. Sort by weighted importance (consistent with rank_nodes_by_importance)
     matched.sort(
-        key=lambda n: (
-            float(n.degree_centrality) * DEGREE_CENTRALITY_WEIGHT
-        ) * (
-            float(n.hit_frequency) * HIT_FREQUENCY_WEIGHT
-        ),
+        key=lambda n: compute_importance(float(n.degree_centrality), float(n.hit_frequency)),
         reverse=True,
     )
 
@@ -117,9 +125,10 @@ async def entity_pull_with_reg(
     # 6. Trigger hit reinforcement in background for all returned nodes
     if session_id and top_nodes:
         for node in top_nodes:
-            asyncio.create_task(
-                record_hit_in_background(node.entity_name, session_id)
+            task = asyncio.create_task(
+                record_hit_in_background(node.entity_name, session_id, agent_id=agent_id)
             )
+            task.add_done_callback(_log_task_exception)
 
     # 7. Serialize to dicts
     return [
@@ -131,11 +140,7 @@ async def entity_pull_with_reg(
             "status": node.status,
             "degree_centrality": float(node.degree_centrality),
             "hit_frequency": node.hit_frequency,
-            "importance": (
-                float(node.degree_centrality) * DEGREE_CENTRALITY_WEIGHT
-            ) * (
-                float(node.hit_frequency) * HIT_FREQUENCY_WEIGHT
-            ),
+            "importance": compute_importance(float(node.degree_centrality), float(node.hit_frequency)),
         }
         for node in top_nodes
     ]

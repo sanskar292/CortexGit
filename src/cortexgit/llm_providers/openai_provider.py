@@ -20,6 +20,8 @@ class OpenAIProvider(LLMProvider, EmbeddingProvider):
                     {"role": "user", "content": user_message}
                 ]
             )
+            if not response.choices:
+                raise LLMError("OpenAI returned an empty choices array.")
             content = response.choices[0].message.content
             if content is None:
                 raise LLMError("OpenAI returned an empty content message.")

@@ -28,26 +28,16 @@ async def semantic_recall(
 
     # 2. Compute goal embedding with graceful fallback
     try:
-        from unittest.mock import Mock, MagicMock
-        if isinstance(embed_text, (Mock, MagicMock)) or "mock" in str(embed_text.__class__).lower():
-            goal_embedding = await asyncio.to_thread(embed_text, goal)
-        elif embedding_provider is None:
+        if embedding_provider is None:
             goal_embedding = await asyncio.to_thread(embed_text, goal)
         else:
             goal_embedding = await asyncio.to_thread(embedding_provider.embed, goal)
     except Exception:
         return []
 
-    # 3. Detect the database dialect from the current session
-    is_postgres = False
-    try:
-        bind = session.bind
-        if bind is None:
-            bind = session.get_bind()
-        if bind is not None:
-            is_postgres = (bind.dialect.name == "postgresql")
-    except Exception:
-        pass
+    # 3. Detect the database dialect from the DATABASE_URL environment variable
+    db_url = os.getenv("DATABASE_URL", "")
+    is_postgres = "postgresql" in db_url
 
     # 4. Check if pgvector is supported by the database
     if is_postgres and HAS_PGVECTOR:
@@ -89,7 +79,7 @@ async def semantic_recall(
                 return 0.0
             return dot_product / (magnitude_v1 * magnitude_v2)
 
-        snapshots.sort(key=lambda s: 1.0 - cosine_similarity(s.embedding, goal_embedding))
+        snapshots.sort(key=lambda s: cosine_similarity(s.embedding, goal_embedding), reverse=True)
         return snapshots[:top_n]
 
 class SemanticRecall:
